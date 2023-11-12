@@ -11,14 +11,20 @@ Start:
     ldi r16, 0xFF
     out DDRB, r16          ; Sätt PORTB som utgång
     ldi r16, HIGH(RAMEND)
-    out SPH, r16           ; Sätt höga stack pekaren
+    out SPH, r16           ; Sätt hög stack pekaren
     ldi r16, LOW(RAMEND)
-    out SPL, r16           ; Sätt låga stack pekaren
+    out SPL, r16           ; Sätt låg stack pekaren
 
 ; Vänta på startbit
 WaitForStart:
     sbis PINA, 0
     rjmp WaitForStart
+	
+DOUBLECHECK:
+	sbis	PINA,0
+	rjmp	WaitForStart
+	call	Delay
+
 
 ; Läs och bearbeta data
 ReadData:
@@ -61,6 +67,6 @@ ret
 DelayFull:
 ldi r16,10
 call delay
-
+ret
 
     ret
