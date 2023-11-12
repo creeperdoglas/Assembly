@@ -15,34 +15,35 @@ Start:
     ldi r16, LOW(RAMEND)
     out SPL, r16           ; Sätt låg stack pekaren
 
-; Vänta på startbit
+; Vänta på startbit (idle)
 WaitForStart:
     sbis PINA, 0
-    rjmp WaitForStart
-	
-DOUBLECHECK:
+    rjmp WaitForStart               ;kanske lägg till en delay efter men tror inte det då det ska hitta en stigande flank och sedan kolla med delay/2 (doublecheck)
+
+;kolla om fortfarande logiskt hög vid T/2
+DOUBLECHECK:                       
 	sbis	PINA,0
 	rjmp	WaitForStart
-	call	Delay
+	call	DelayHalf
 
 
-; Läs och bearbeta data
+; Läs och bearbeta data, 4 bitar läses
 ReadData:
     ldi r16, 4             ; Räknare för databitar
 
 ProcessLoop:
-    call Delay
-    lsl r20                ; Skifta r20 åt vänster
+    call DelayFull
+    lsl r20                ; Skifta r20 åt vänster, för att lagra nästa bit
     sbic PINA, 0
     inc r20                ; Öka r20 om PINA.0 är hög
     dec r16
-    brne ProcessLoop
+    brne ProcessLoop         ;fortsätt loopa tills alla bitar är lästa
 
 ; Skicka ut data
     out PORTB, r20         ; Skicka bearbetade data till PORTB
 
 ; Återställ och upprepa
-    rjmp Start              ; Upprepa processen
+    rjmp Start              
 
 ; Fördröjningsrutin
 Delay:
@@ -69,4 +70,4 @@ ldi r16,10
 call delay
 ret
 
-    ret
+   ret
