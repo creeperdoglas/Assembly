@@ -9,35 +9,58 @@
 ; Initiera systemet
 Start:
     ldi r16, 0xFF
-    out DDRB, r16          ; Sätt PORTB som utgång
+    out DDRB, r16          ; SÃ¤tt PORTB som utgÃ¥ng
     ldi r16, HIGH(RAMEND)
-    out SPH, r16           ; Sätt höga pekaren
+    out SPH, r16           ; SÃ¤tt hÃ¶ga stack pekaren
     ldi r16, LOW(RAMEND)
-    out SPL, r16           ; Sätt låga pekaren
+    out SPL, r16           ; SÃ¤tt lÃ¥ga stack pekaren
 
-; Vänta på startbit
+; VÃ¤nta pÃ¥ startbit
 WaitForStart:
     sbis PINA, 0
     rjmp WaitForStart
 
-; Läs och bearbeta data
+; LÃ¤s och bearbeta data
 ReadData:
-    ldi r16, 4             ; Räknare för databitar
+    ldi r16, 4             ; RÃ¤knare fÃ¶r databitar
+
 ProcessLoop:
     call Delay
-    lsl r20                ; Skifta r20 åt vänster
+    lsl r20                ; Skifta r20 Ã¥t vÃ¤nster
     sbic PINA, 0
-    inc r20                ; Öka r20 om PINA.0 är hög
+    inc r20                ; Ã–ka r20 om PINA.0 Ã¤r hÃ¶g
     dec r16
     brne ProcessLoop
 
 ; Skicka ut data
     out PORTB, r20         ; Skicka bearbetade data till PORTB
 
-; Återställ och upprepa
+; Ã…terstÃ¤ll och upprepa
     rjmp Start              ; Upprepa processen
 
-; Fördröjningsrutin
+; FÃ¶rdrÃ¶jningsrutin
 Delay:
-    
+sbi PORTB,7    ;bit 7=1  
+
+DelayYttreLoop:
+ldi r17, 255
+
+DelayInreLoop:
+dec r17
+brne DelayInreLoop
+dec r16
+brne DelayYttreLoop
+cbi PORTB, 7        ;bit 7=0
+ret
+
+DelayHalf:
+ldi r16,5
+call delay
+ret
+
+DelayFull:
+ldi r16,10
+call delay
+
+
     ret
