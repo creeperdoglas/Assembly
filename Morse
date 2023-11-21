@@ -1,0 +1,91 @@
+; Morse labb.asm - Optimiserad Version
+; Author: Melker Gustafsson
+; En kort signal (”prick”) är 1 tidsenhet lång
+; En lång signal (”streck”) är 3 tidsenheter
+; Mellan teckendelarna är 1 tidsenhets tystnad
+; Mellan tecknen 3 tidsenheters tystnad
+; Mellan ord 7 tidsenheters tystnad.
+
+; Initialiseringsrutin
+SETUP:
+    ldi r16, HIGH(RAMEND) ; Ställ in stack pekarens high byte
+    out SPH, r16
+    ldi r16, LOW(RAMEND) ; Ställ in stack pekarens low byte
+    out SPL, r16
+    ldi r16, $FF ; Konfigurera PORTB som utgång
+    out DDRB, r16
+    ldi ZL, LOW(MESSAGE*2) ; Ställ in adressen till meddelandet
+    ldi ZH, HIGH(MESSAGE*2)
+
+    .def N = r18 ; Definition av N för tidsenhet
+    .equ SPEED = 100 ; Hastighet för pip-ljud
+    .equ PITCH = 255 ; Tonhöjd för pip-ljud
+
+; Huvudloop för att skicka Morse-koden
+MORSE:
+    call    GET_CHAR ; Hämta nästa tecken
+    cpi     r21, $00 ; Kontrollera om det är slutet av meddelandet
+    breq    END_OF_LINE ; Gå till slutet om meddelandet är över
+    call    LOOKUP ; Konvertera tecken till Morse-kod
+    call    SEND_CHAR ; Skicka Morse-koden
+    rjmp    MORSE ; Återgå till början av loopen
+
+; Rutin vid slutet av meddelandet
+END_OF_LINE:
+    ldi     N, $10 ; 7 tidsenheters tystnad mellan orden
+    call    DELAY_LOOP ; Vänta 
+    rjmp    SETUP ; Återgå till initialiseringsrutinen
+
+; Rutin för att hämta nästa tecken från meddelandet
+GET_CHAR:
+    lpm r21, Z+ ; Ladda programminne till r21 och öka Z
+    ret ; Återgå till anropande rutin
+
+; Rutin för att konvertera tecken till Morse-kod
+LOOKUP:
+    ldi     ZH, HIGH(BTAB*2) ; Ställ in höga delen av adressen till Morse-tabellen
+    ldi     ZL, LOW(BTAB*2) ; Ställ in låga delen av adressen
+    subi    r21, $41 ; Konvertera ASCII till tabellindex
+    add     ZL, r21 ; Justera tabelladressen
+    lpm     r22, Z ; Ladda Morse-koden för tecknet
+    ret 
+
+; Rutin för att sända ett tecken i Morse-kod
+SEND_CHAR:
+    tst     r22 ; Testa om det finns mer att skicka
+    breq    MORSE ; Gå tillbaka om inget mer att skicka
+    ldi     N, $01 ; Ställ in tidsenhet för kort signal
+    rcall   BEEP ; Skicka pip-ljud
+    sbrs    r22, 7 ; Hoppa över om bit 7 är satt (lång signal)
+    rcall   BEEP ; Skicka ett ytterligare pip-ljud
+    lsl     r22 ; Flytta nästa bit till högst bit
+    rjmp    SEND_CHAR ; Fortsätt skicka nästa del av tecknet
+
+; Rutin för att skapa ett pip-ljud
+BEEP:
+    sbi     PORTB, 0 ; Sätt PORTB, pin 0 hög
+    call    DELAY_LOOP ; Vänta
+    cbi     PORTB, 0 ; Sätt PORTB, pin 0 låg
+    call    DELAY_LOOP ; Vänta
+    dec     N ; Minska antalet pip-ljud
+    brne    BEEP ; Fortsätt om det finns fler pip-ljud att skicka
+    ret 
+
+; Rutin för att vänta en tidsenhet
+DELAY_LOOP:
+    ldi     r17, SPEED ; Ställ in antal loopar för pip-ljudets längd
+    ldi     r16, PITCH ; Ställ in tonhöjd
+DELAY_LOOP_INNER:
+    dec     r16 ; Minska tonhöjden
+    brne    DELAY_LOOP_INNER ; Fortsätt loopa om inte 0
+    dec     r17 ; Minska antalet loopar
+    brne    DELAY_LOOP ; Fortsätt loopa om inte 0
+    ret 
+
+.org $0100
+MESSAGE:
+    .db "Datorteknik", $00 ; Meddelande som ska översättas
+
+.org $0200
+BTAB:
+    .db $60, $88, $A8, $90, $40, $28, $D0, $08, $20, $78, $B0, $48, $E0, $A0, $F0, $68, $D8, $50, $10, $C0, $30, $18, $70, $98, $B8, $C8 ; Morse-tabell
