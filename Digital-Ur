@@ -1,0 +1,223 @@
+;
+; Digitalur labb.asm
+;
+; Created: 2023-12-02 10:42:33
+; Author : Melker Gustafsson
+;
+.org 0x00
+rjmp SETUP
+; Sätter programstarten vid adress 0x00, vilket är reset-vektorn. När mikrokontrollern startar om eller slås på, hoppar den till SETUP.
+
+.org 0x10 
+rjmp TIMER1  //BCD
+; Definierar en avbrottsvektor vid adress 0x10. Detta är adressen för Timer 1's overflow-avbrott. När Timer 1 överflödar, hoppar mikrokontrollern till INT1.
+
+.org 0x12
+rjmp TIMER0  //MUX
+; Definierar en avbrottsvektor vid adress 0x12. adressen för Timer 0's overflow-avbrott. När Timer 0 överflödar, hoppar mikrokontrollern till ISR_TIMER0.
+
+.org 0x30
+; Sätter nästa kod att börja vid adress 0x30. 
+
+
+
+SETUP: 
+	.equ NUMBER_OF_DISPLAYS = 4
+	.def COUNTER = r18
+
+	ldi	r16, HIGH(RAMEND)
+	out	SPH, r16
+	ldi	r16, LOW(RAMEND)
+	out	SPL, r16
+
+	ldi r16, 0xFF
+	out DDRB, r16
+
+	ldi r16, 0x03
+	out DDRD, r16
+
+	ldi ZH, HIGH(NUMBER*2)
+	ldi ZL, LOW(NUMBER*2)
+
+	//allokerad N bytes i memory
+	.dseg
+	.org 0x60
+
+TIME_VAR:
+	.byte NUMBER_OF_DISPLAYS
+
+CURRENT_DISPLAY:
+	.byte 1
+	.cseg
+
+	ldi YL, LOW(TIME_VAR)
+	ldi YH, HIGH(TIME_VAR)
+
+	ldi r17, NUMBER_OF_DISPLAYS
+	ldi r16, 0x00
+	rcall CLEAR
+	rcall INIT_TIMER1
+	rcall INIT_TIMER0
+	sei   //set global interrupt
+	rjmp main
+
+CLEAR:
+	push YL
+	push YH
+	st Y+, r16 //store 0
+	dec r17
+	brne CLEAR
+	pop YL
+	pop YH
+	ret	
+
+INIT_TIMER1:  //16-bit Timer 1 som är satt som Overflow timer
+//sätt counter läge
+	ldi r16, (1<<WGM13)|(1<<WGM12)  //Waveform Generation Mode
+	out TCCR1B, r16
+
+	ldi r16, (1<<WGM11)|(0<<WGM10) 
+	out TCCR1A, r16
+	//Instruktionen ldi r16, (1<<WGM11)|(0<<WGM10) laddar r16 med ett värde som sätter biten WGM11 och säkerställer att biten WGM10 är nollställd (inte aktiverad).		
+	//Därefter skriver out TCCR1A, r16 detta värde till kontrollregistret TCCR1A.																			
+
+	//set max värde innan overflow
+	ldi r16, 0x3d
+	out ICR1H, r16
+	ldi r16, 0x08
+	out ICR1L, r16
+
+	//prescaling och interrupt
+	in r16, TCCR1B
+	ori r16,(0<<CS12)|(1<<CS11)|(1<<CS10) // aktiverar bitarna CS11 och CS10 och säkerställer att biten CS12 är avstängd
+	
+	//aktiverar avbrottet (interrupt) när Timer 1 när sitt max värde
+	out TCCR1B, r16
+	ldi r16, 1<<TOIE1 //Timer Overflow Interrupt Enable 1
+	out TIMSK, r16    //Timer Interrupt Mask Register
+	ret
+
+INIT_TIMER0:
+	ldi r16, (0<<CS02)|(1<<CS01)|(0<<CS00) // Prescaler 256
+	out TCCR0, r16
+	
+	in r16,TIMSK
+	ori r16, 1<<TOIE0
+	ret
+
+	
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+MAIN:
+	rjmp MAIN
+
+
+TIMER1:
+	push r16
+	in r16, SREG //spara flaggor, säkerställer så att programmet kan köras efter avbrottet
+	rcall TIMER_COUNTER
+	out SREG, r16
+	pop r16
+	reti
+
+
+TIMER0:
+	push r16
+	in r16, SREG //spara flaggor, säkerställer så att programmet kan köras efter avbrottet
+	rcall TIMER_COUNTER
+	out SREG, r16
+	pop r16
+	reti
+
+
+DISPLAY_TIME:
+	push YL
+	push YH
+	push ZH
+	push ZL
+	push COUNTER
+
+	//Ladda adressen för CURRENT_DISPLAY i Y-registret
+	ldi YH, HIGH(CURRENT_DISPLAY)
+	ldi YL, LOW(CURRENT_DISPLAY)
+
+	//Ladda det nuvarande displayvärdet i COUNTER och skicka det till PORTD
+	ld COUNTER, Y
+	out PORTD, COUNTER
+
+	//Beräkna adressen för tidsvärdet i TIME_VAR som ska visas och ladda det i r16
+	ldi YH, HIGH(TIME_VAR)
+	ldi YL, HIGH(TIME_VAR)
+	add YL, COUNTER
+	ld r16,Y
+
+	//Använd Z-registret för att hämta displaydatan från NUMBER-tabellen
+	ldi ZH, HIGH(NUMBER*2)
+	ldi ZL, HIGH(NUMBER*2)
+	add ZL, r16
+	lpm r16, Z
+	out PORTB, r16
+
+	//Öka COUNTER för att byta till nästa displaysegment
+	inc COUNTER
+	cpi COUNTER, NUMBER_OF_DISPLAYS
+	brne UpdateDisplayIndex
+	clr COUNTER
+	//Återställ COUNTER om alla displaysegment har uppdaterats
+
+
+UpdateDisplayIndex:
+    ; Ladda adressen för CURRENT_DISPLAY i Y-registret
+	ldi YH, HIGH(CURRENT_DISPLAY)
+	ldi YL, LOW(CURRENT_DISPLAY)
+	st Y, COUNTER
+
+	; Återställ register från stacken till deras ursprungliga värden
+	pop COUNTER
+	pop ZL
+	pop ZH
+	pop YH
+	pop YL
+	ret
+
+
+TIMER_COUNTER:
+	; Ladda adressen för TIME_VAR i Y-registret
+	push r18
+	push YH
+	push YL
+	ldi YL,LOW(TIME_VAR)
+	ldi YH,HIGH(TIME_VAR)
+
+
+UpdateTimeSegments:
+	ldi r18,10
+
+	call LOAD
+	brne DONE
+
+	subi r18,NUMBER_OF_DISPLAYS
+
+	call LOAD
+	brne DONE
+	rjmp UpdateTimeSegments
+	
+	DONE:
+	pop YL
+	pop YH
+	pop r18
+	ret
+
+LOAD:
+	ld r17,Y
+	inc r17
+	cp r17, r18
+	brne NOT_MAX
+	clr r17
+
+NOT_MAX:
+	st Y+, r17
+	ret
+//---------------------------------------------------------------------------------------------------------------
+
+	.org 0x0200 
+NUMBER: .db 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x67 //var 0x7C innan, kanske inte gör någon skillnad
