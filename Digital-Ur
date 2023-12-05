@@ -6,218 +6,214 @@
 ;
 .org 0x00
 rjmp SETUP
-; Sätter programstarten vid adress 0x00, vilket är reset-vektorn. När mikrokontrollern startar om eller slås på, hoppar den till SETUP.
+; Sätter programstarten vid adress 0x00, vilket är reset-vektorn.
 
 .org 0x10 
-rjmp TIMER1  //BCD
-; Definierar en avbrottsvektor vid adress 0x10. Detta är adressen för Timer 1's overflow-avbrott. När Timer 1 överflödar, hoppar mikrokontrollern till INT1.
+rjmp ISR_TIMER1
+; Definierar en avbrottsvektor vid adress 0x10 för Timer 1's overflow-avbrott.
 
 .org 0x12
-rjmp TIMER0  //MUX
-; Definierar en avbrottsvektor vid adress 0x12. adressen för Timer 0's overflow-avbrott. När Timer 0 överflödar, hoppar mikrokontrollern till ISR_TIMER0.
+rjmp ISR_TIMER0
+; Definierar en avbrottsvektor vid adress 0x12 för Timer 0's overflow-avbrott.
 
 .org 0x30
-; Sätter nästa kod att börja vid adress 0x30. 
+; Sätter nästa kod att börja vid adress 0x30.
 
+SETUP:
+    .equ NUMBER_OF_DISPLAYS = 4
+    .def COUNTER = r18
 
+    ldi    r16, HIGH(RAMEND)
+    out    SPH, r16
+    ldi    r16, LOW(RAMEND)
+    out    SPL, r16
+    ; Initiera stackpekaren.
 
-SETUP: 
-	.equ NUMBER_OF_DISPLAYS = 4
-	.def COUNTER = r18
+    ldi r16, 0xFF
+    out DDRB, r16
+    ; Ställer alla pinnar på Port B som utgångar.
 
-	ldi	r16, HIGH(RAMEND)
-	out	SPH, r16
-	ldi	r16, LOW(RAMEND)
-	out	SPL, r16
+    ldi r16, 0x03
+    out DDRD, r16
+    ; Ställer Port D pinnar 0 och 1 som utgångar (används för displayen).
 
-	ldi r16, 0xFF
-	out DDRB, r16
+    ldi ZH, HIGH(NUMBER*2)
+    ldi ZL, LOW(NUMBER*2)
+    ; Laddar Z pekare med starten av NUMBER tabellen (för LPM).
 
-	ldi r16, 0x03
-	out DDRD, r16
-
-	ldi ZH, HIGH(NUMBER*2)
-	ldi ZL, LOW(NUMBER*2)
-
-	//allokerad N bytes i memory
-	.dseg
-	.org 0x60
+    ; Allokerad N bytes i minnet.
+    .dseg
+    .org 0x60
 
 TIME_VAR:
-	.byte NUMBER_OF_DISPLAYS
+    .byte NUMBER_OF_DISPLAYS
 
 CURRENT_DISPLAY:
-	.byte 1
-	.cseg
+    .byte 1
+    .cseg
 
-	ldi YL, LOW(TIME_VAR)
-	ldi YH, HIGH(TIME_VAR)
+    ldi YL, LOW(TIME_VAR)
+    ldi YH, HIGH(TIME_VAR)
 
-	ldi r17, NUMBER_OF_DISPLAYS
-	ldi r16, 0x00
-	rcall CLEAR
-	rcall INIT_TIMER1
-	rcall INIT_TIMER0
-	sei   //set global interrupt
-	rjmp main
+    ldi r17, NUMBER_OF_DISPLAYS
+    ldi r16, 0x00
+    rcall CLEAR
+    rcall INIT_TIMER1
+    rcall INIT_TIMER0
+    sei   ; Aktivera globala avbrott.
+    rjmp main
 
 CLEAR:
-	push YL
-	push YH
-	st Y+, r16 //store 0
-	dec r17
-	brne CLEAR
-	pop YL
-	pop YH
-	ret	
+    push YL
+    push YH
+    st Y+, r16 ; Lagrar 0 i minne allokerat för TIME_VAR.
+    dec r17
+    brne CLEAR
+    pop YH
+    pop YL
+    ret
 
-INIT_TIMER1:  //16-bit Timer 1 som är satt som Overflow timer
-//sätt counter läge
-	ldi r16, (1<<WGM13)|(1<<WGM12)  //Waveform Generation Mode
-	out TCCR1B, r16
+INIT_TIMER1:  ; 16-bitars Timer 1 inställd som en overflow timer.
+    ; Ställer in räknarläge.
+    ldi r16, (1<<WGM13)|(1<<WGM12)  
+    out TCCR1B, r16
+    ; Konfigurerar Timer 1 för CTC läge med OCR1A som topp.
 
-	ldi r16, (1<<WGM11)|(0<<WGM10) 
-	out TCCR1A, r16
-	//Instruktionen ldi r16, (1<<WGM11)|(0<<WGM10) laddar r16 med ett värde som sätter biten WGM11 och säkerställer att biten WGM10 är nollställd (inte aktiverad).		
-	//Därefter skriver out TCCR1A, r16 detta värde till kontrollregistret TCCR1A.																			
+    ldi r16, (1<<WGM11)|(0<<WGM10) 
+    out TCCR1A, r16
+    ; Fortsätter konfigurationen av Timer 1 CTC läge.
 
-	//set max värde innan overflow
-	ldi r16, 0x3d
-	out ICR1H, r16
-	ldi r16, 0x08
-	out ICR1L, r16
+    ; Ställer in max räknarvärde innan overflow.
+    ldi r16, 0x3d
+    out ICR1H, r16
+    ldi r16, 0x08
+    out ICR1L, r16
+    ; ICR1 är toppvärdet för Timer 1.
 
-	//prescaling och interrupt
-	in r16, TCCR1B
-	ori r16,(0<<CS12)|(1<<CS11)|(1<<CS10) // aktiverar bitarna CS11 och CS10 och säkerställer att biten CS12 är avstängd
-	
-	//aktiverar avbrottet (interrupt) när Timer 1 när sitt max värde
-	out TCCR1B, r16
-	ldi r16, 1<<TOIE1 //Timer Overflow Interrupt Enable 1
-	out TIMSK, r16    //Timer Interrupt Mask Register
-	ret
+    ; Ställer in prescaler och avbrott.
+    in r16, TCCR1B
+    ori r16,(0<<CS12)|(1<<CS11)|(1<<CS10) ; Prescaler inställd till F_CPU/64
+    out TCCR1B, r16
+    ldi r16, 1<<TOIE1
+    out TIMSK, r16
+    ; Aktiverar Timer 1 overflow avbrott.
+    ret
 
 INIT_TIMER0:
-	ldi r16, (0<<CS02)|(1<<CS01)|(0<<CS00) // Prescaler 256
-	out TCCR0, r16
-	
-	in r16,TIMSK
-	ori r16, 1<<TOIE0
-	ret
+    ldi r16, (0<<CS02)|(1<<CS01)|(0<<CS00) ; Prescaler 256
+    out TCCR0, r16
+    
+    in r16, TIMSK
+    ori r16, 1<<TOIE0
+    out TIMSK, r16
+    ; Aktiverar Timer 0 overflow avbrott.
+    ret
 
-	
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 MAIN:
-	rjmp MAIN
+    ; Huvudloop där MCU kommer vänta på avbrott.
+    rjmp MAIN
 
+ISR_TIMER1:
+    push r16
+    in r16, SREG ; Spara statusregister.
+    rcall TIMER_COUNTER
+    out SREG, r16
+    pop r16
+    reti ; Återgå från avbrott.
 
-TIMER1:
-	push r16
-	in r16, SREG //spara flaggor, säkerställer så att programmet kan köras efter avbrottet
-	rcall TIMER_COUNTER
-	out SREG, r16
-	pop r16
-	reti
-
-
-TIMER0:
-	push r16
-	in r16, SREG //spara flaggor, säkerställer så att programmet kan köras efter avbrottet
-	rcall TIMER_COUNTER
-	out SREG, r16
-	pop r16
-	reti
-
+ISR_TIMER0:
+    push r16
+    in r16, SREG ; Spara statusregister.
+    rcall DISPLAY_TIME
+    out SREG, r16
+    pop r16
+    reti ; Återgå från avbrott.
 
 DISPLAY_TIME:
-	push YL
-	push YH
-	push ZH
-	push ZL
-	push COUNTER
+    push YL
+    push YH
+    push ZH
+    push ZL
+    push COUNTER
 
-	//Ladda adressen för CURRENT_DISPLAY i Y-registret
-	ldi YH, HIGH(CURRENT_DISPLAY)
-	ldi YL, LOW(CURRENT_DISPLAY)
+    ; Laddar adressen för CURRENT_DISPLAY i Y register.
+    ldi YH, HIGH(CURRENT_DISPLAY)
+    ldi YL, LOW(CURRENT_DISPLAY)
 
-	//Ladda det nuvarande displayvärdet i COUNTER och skicka det till PORTD
-	ld COUNTER, Y
-	out PORTD, COUNTER
+    ; Laddar det nuvarande displayvärdet i COUNTER och skickar det till PORTD.
+    ld COUNTER, Y
+    out PORTD, COUNTER
 
-	//Beräkna adressen för tidsvärdet i TIME_VAR som ska visas och ladda det i r16
-	ldi YH, HIGH(TIME_VAR)
-	ldi YL, HIGH(TIME_VAR)
-	add YL, COUNTER
-	ld r16,Y
+    ; Beräknar adressen för tidsvärdet i TIME_VAR som ska visas och laddar det i r16.
+    ldi YH, HIGH(TIME_VAR)
+    ldi YL, HIGH(TIME_VAR)
+    add YL, COUNTER
+    ld r16, Y
 
-	//Använd Z-registret för att hämta displaydatan från NUMBER-tabellen
-	ldi ZH, HIGH(NUMBER*2)
-	ldi ZL, HIGH(NUMBER*2)
-	add ZL, r16
-	lpm r16, Z
-	out PORTB, r16
+    ; Använder Z registret för att hämta displaydata från NUMBER tabellen.
+    ldi ZH, HIGH(NUMBER*2)
+    ldi ZL, LOW(NUMBER*2)
+    add ZL, r16
+    lpm r16, Z
+    out PORTB, r16
 
-	//Öka COUNTER för att byta till nästa displaysegment
-	inc COUNTER
-	cpi COUNTER, NUMBER_OF_DISPLAYS
-	brne UpdateDisplayIndex
-	clr COUNTER
-	//Återställ COUNTER om alla displaysegment har uppdaterats
-
+    ; Öka COUNTER för att byta till nästa displaysegment.
+    inc COUNTER
+    cpi COUNTER, NUMBER_OF_DISPLAYS
+    brne UpdateDisplayIndex
+    clr COUNTER
+    ; Återställer COUNTER om alla displaysegment har uppdaterats.
 
 UpdateDisplayIndex:
-    ; Ladda adressen för CURRENT_DISPLAY i Y-registret
-	ldi YH, HIGH(CURRENT_DISPLAY)
-	ldi YL, LOW(CURRENT_DISPLAY)
-	st Y, COUNTER
+    ; Laddar adressen för CURRENT_DISPLAY i Y register.
+    ldi YH, HIGH(CURRENT_DISPLAY)
+    ldi YL, LOW(CURRENT_DISPLAY)
+    st Y, COUNTER
 
-	; Återställ register från stacken till deras ursprungliga värden
-	pop COUNTER
-	pop ZL
-	pop ZH
-	pop YH
-	pop YL
-	ret
-
+    ; Återställer register från stacken till deras ursprungliga värden.
+    pop COUNTER
+    pop ZL
+    pop ZH
+    pop YH
+    pop YL
+    ret
 
 TIMER_COUNTER:
-	; Ladda adressen för TIME_VAR i Y-registret
-	push r18
-	push YH
-	push YL
-	ldi YL,LOW(TIME_VAR)
-	ldi YH,HIGH(TIME_VAR)
+    ; Laddar adressen för TIME_VAR i Y register.
+    push r18
+    push YH
+    push YL
+    ldi YL, LOW(TIME_VAR)
+    ldi YH, HIGH(TIME_VAR)
 
+NEXT_2SEGMENT:
+    ldi r18,10
 
-UpdateTimeSegments:
-	ldi r18,10
+    call LOAD_STORE
+    brne DONE_WITH_INC
 
-	call LOAD
-	brne DONE
+    subi r18, NUMBER_OF_DISPLAYS
 
-	subi r18,NUMBER_OF_DISPLAYS
+    call LOAD_STORE
+    brne DONE_WITH_INC
+    rjmp NEXT_2SEGMENT
 
-	call LOAD
-	brne DONE
-	rjmp UpdateTimeSegments
-	
-	DONE:
-	pop YL
-	pop YH
-	pop r18
-	ret
+    DONE_WITH_INC:
+    pop YL
+    pop YH
+    pop r18
+    ret
 
-LOAD:
-	ld r17,Y
-	inc r17
-	cp r17, r18
-	brne NOT_MAX
-	clr r17
-
+LOAD_STORE:
+    ld r17, Y
+    inc r17
+    cp r17, r18
+    brne NOT_MAX
+    clr r17
 NOT_MAX:
-	st Y+, r17
-	ret
-//---------------------------------------------------------------------------------------------------------------
+    st Y+, r17
+    ret
 
-	.org 0x0200 
-NUMBER: .db 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x67 //var 0x7C innan, kanske inte gör någon skillnad
+.org 0x0200
+NUMBER: .db 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x67 
+;definitionerna för siffrorna 0-9 för 7-segmentsdisplayen.
