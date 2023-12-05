@@ -10,11 +10,11 @@ rjmp SETUP
 
 ; Definierar en avbrottsvektor vid adress 0x10 för Timer 1's overflow-avbrott.
 .org 0x10 
-rjmp ISR_TIMER1
+rjmp ISR_TIMER1   //BCD
 
 ; Definierar en avbrottsvektor vid adress 0x12 för Timer 0's overflow-avbrott.
 .org 0x12
-rjmp ISR_TIMER0
+rjmp ISR_TIMER0  //MUX
 
 .org 0x30
 ;här resten av kodens adress
