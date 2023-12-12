@@ -1,0 +1,81 @@
+vill testa den andra delen för att se exakt vad som behöver implementeras
+; Anta att vi har koder för att jämföra POSX/POSY med TPOSX/TPOSY någonstans i MAIN loop eller inom UPDATE
+; Om POSX/TPOSX och POSY/TPOSY matchar, då har spelaren nått målet
+CHECK_HIT:
+	lds r16, POSX
+	lds r17, TPOSX
+	cp  r16, r17
+	brne NOT_HIT ; Om de inte matchar, hoppa över BEEP
+
+	lds r16, POSY
+	lds r17, TPOSY
+	cp  r16, r17
+	brne NOT_HIT ; Om de inte matchar, hoppa över BEEP
+
+	; Om vi är här, har POSX/POSY matchat TPOSX/TPOSY och vi har en träff
+	call BEEP
+	; Här skulle du lägga till kod för att återställa spelet eller göra något annat när en träff detekteras
+
+NOT_HIT:
+	; Fortsätt med spelets normala flöde om det inte var en träff
+	ret
+; --- WARM start. Set up a new game.
+; --- Uses :
+WARM:
+	; Sätt startposition (POSX, POSY)=(0, 2)
+	ldi r16, 0
+	sts POSX, r16
+	ldi r16, 2
+	sts POSY, r16
+
+	; Sätt startposition (TPOSX, TPOSY) med hjälp av RANDOM
+	push r0
+	push r0
+	call RANDOM
+	pop r17         ; Första pop ger TPOSY
+	pop r16         ; Andra pop ger TPOSX
+	sts TPOSY, r17  ; Spara TPOSY
+	sts TPOSX, r16  ; Spara TPOSX
+
+	; Radera videominnet
+	call ERASE
+	ret
+
+; --- RANDOM generate TPOSX, TPOSY in variables passed on stack.
+; --- Usage as:
+; --- push r0
+; --- push r0
+; --- call RANDOM
+; --- pop TPOSX
+; --- pop TPOSY
+; --- Uses: r16
+RANDOM:
+	; Hämta stackpekarens adress
+	in r16, SPH
+	mov ZH, r16
+	in r16, SPL
+	mov ZL, r16
+
+	; Ladda SEED och använd för att beräkna TPOSX och TPOSY
+	lds r16, SEED
+	; Antag att vi har någon form av randomiseringsfunktion eller increment SEED
+	inc r16             ; Öka SEED enkelt för demonstration
+	sts SEED, r16       ; Spara tillbaka ökat SEED
+	andi r16, 0x03      ; Begränsa värdet av TPOSX till 0-3 för vänstra halvan
+	st Z+, r16          ; Spara TPOSX på stacken
+	andi r16, 0x01      ; Begränsa värdet av TPOSY till 0-1
+	st Z, r16           ; Spara TPOSY på stacken
+	ret
+
+; --- ERASE videomemory
+; --- Clears VMEM .. VMEM +4
+; --- Uses :
+ERASE:
+	ldi ZH, HIGH(VMEM)
+	ldi ZL, LOW(VMEM)
+	ldi r16, 0x00        ; Sätt r16 till 0 för att radera minnet
+ERASE_LOOP:
+	st Z+, r16           ; Sätt nuvarande Z till 0 och öka Z
+	cpi ZL, VMEM+VMEM_SZ ; Jämför ZL med VMEM+VMEM_SZ
+	brlo ERASE_LOOP      ; Fortsätt loopen om ZL < VMEM+VMEM_SZ
+	ret
