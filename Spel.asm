@@ -67,8 +67,8 @@ SETUP:
 	call ADC_INIT
 	call ERASE_VMEM
 	call CLEAR_JOYSTICK
-
 	sei
+	rjmp MAIN
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Rensa joystickdata i minnet
 CLEAR_JOYSTICK:
@@ -97,7 +97,7 @@ MAIN:
 	call JOYSTICK
 	call ERASE_VMEM
 	call UPDATE
-	//call DELAY_500
+	call DELAY_500
 	//call BEEP
 	rjmp MAIN
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -234,8 +234,7 @@ ERASE_VMEM:
 
 ERASE_VMEM_LOOP:	
 	ld r16, Z
-	ldi r16, 0b01010101
-	//clr r16
+	clr r16
 	st Z+, r16	
 	cpi ZL, VMEM+VMEM_SZ
 	brne ERASE_VMEM_LOOP
@@ -272,7 +271,7 @@ DELAY_LOOP:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Specifik fördröjning på 500 millisekunder
 DELAY_500:
-	ldi  r18, 3
+	ldi  r18, 1
     ldi  r19, 138
     ldi  r20, 86
 L1: dec  r20
