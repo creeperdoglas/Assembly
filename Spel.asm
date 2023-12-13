@@ -20,7 +20,7 @@
 	.equ	AD_CHAN_Y   = 1		; ADC1=PA1, PORTA bit 1 Y-led
 	.equ	GAME_SPEED  = 70	; inter-run delay (millisecs)
 	.equ	PRESCALE    = 7		; AD-prescaler value
-	.equ	BEEP_PITCH  = 20	; Victory beep pitch
+	.equ	BEEP_PITCH  = 100	; Victory beep pitch
 	.equ	BEEP_LENGTH = 100	; Victory beep length
 	
 	; ---------------------------------------
@@ -67,6 +67,8 @@ SETUP:
 	call ADC_INIT
 	call ERASE_VMEM
 	call CLEAR_JOYSTICK
+	
+	call WARM
 	sei
 	rjmp MAIN
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -98,6 +100,7 @@ MAIN:
 	call ERASE_VMEM
 	call UPDATE
 	call DELAY_500
+	call CHECK_HIT
 	//call BEEP
 	rjmp MAIN
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -135,7 +138,14 @@ wait:
 ISR_TIMER0:
 	push r16
 	in r16,SREG //RÄDDAR FLAGGOR
+	push r16
+
 	call MUX
+	lds r16, SEED
+    inc r16
+    sts SEED, r16
+
+	pop r16
 	out SREG,r16
 	pop r16
 	reti
@@ -195,36 +205,117 @@ DONE_WITH_INPUT:
 
 ; Multiplexera display och uppdatera skärmen
 MUX:
-	push ZL
-	push ZH
-	
-	ldi ZL, LOW(LINE)
-	ldi ZH, HIGH(LINE)
-	ld r16, Z
-	out PORTD, r16
+    push r16
+    push ZL
+    push ZH
+    
+    ; Läs nuvarande radnummer
+    ldi ZL, LOW(LINE)
+    ldi ZH, HIGH(LINE)
+    ld r16, Z
+    
+    ; Rensa PORTB innan vi byter rad för att undvika blödning
+    clr r17
+    out PORTB, r17
 
-	ldi ZL, LOW(VMEM)
-	ldi ZH, HIGH(VMEM)
+    ; Välj nuvarande rad på PORTD
+    out PORTD, r16
+    
+    ; Ladda motsvarande raddata från VMEM och skriv till PORTB
+    ldi ZL, LOW(VMEM)
+    ldi ZH, HIGH(VMEM)
+    add ZL, r16
+    ld r16, Z
+    out PORTB, r16
 
-	add ZL, r16
-	ld  r16, Z
-	out PORTB, r16
-
-	ldi ZL, LOW(LINE)
-	ldi ZH, HIGH(LINE)
-	ld r16, Z
-	inc r16
-	cpi r16, VMEM_SZ
-	brne MUX_DONE
-	clr r16
+    ; Uppdatera radnumret för nästa avbrott
+    ldi ZL, LOW(LINE)
+    ldi ZH, HIGH(LINE)
+    ld r16, Z
+    inc r16
+    cpi r16, VMEM_SZ
+    brne MUX_DONE
+    clr r16
 
 MUX_DONE:
 	st Z, r16
 	pop ZH
 	pop ZL
+	pop r16
 	ret
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Rensa video-minnet
+CHECK_HIT:
+	lds r16, POSX
+	lds r17, TPOSX
+	cp  r16, r17
+	brne NOT_HIT ; Om de inte matchar, hoppa över BEEP
+
+	lds r16, POSY
+	lds r17, TPOSY
+	cp  r16, r17
+	brne NOT_HIT ; Om de inte matchar, hoppa över BEEP
+
+	; Om vi är här, har POSX/POSY matchat TPOSX/TPOSY och vi har en träff
+	call BEEP
+
+	
+	rjmp setup
+	; Här skulle du lägga till kod för att återställa spelet eller göra något annat när en träff detekteras
+
+NOT_HIT:
+	; Fortsätt med spelets normala flöde om det inte var en träff
+	ret
+
+; --- WARM start. Set up a new game
+WARM:
+    cli             ; Stäng av avbrott under initialiseringen
+    ldi r16, 6      ; Välj längsta till höger position för x (POSX)
+    sts POSX, r16
+    ldi r16, 2      ; Välj en mittenposition för y (POSY),
+    sts POSY, r16
+	push r16
+	push r16
+    call RANDOM     ; Sätt en slumpmässig position för målet
+	pop r16
+	sts TPOSX, r16
+	pop r16
+	sts TPOSY, r16
+    call ERASE_VMEM ; Rensa videominnet
+    sei             ; Aktivera avbrott igen
+    ret
+; --- RANDOM generate TPOSX, TPOSY in variables passed on stack.
+RANDOM:
+
+    in r16, SPH
+    mov ZH, r16
+    in r16, SPL
+    mov ZL, r16
+
+    lds r16, SEED          ; Ladda det inkrementerade värdet av SEED
+    inc r16                ; Inkrementera SEED
+    sts SEED, r16          ; Spara det inkrementerade värdet tillbaka till SEED
+    andi r16, 0x03         ; Använd endast de två lägsta bitarna
+    cpi r16, 3             ; Kontrollera om resultatet är 3
+    brlo STORE_X           ; Om det är mindre än 3, fortsätt
+    dec r16                ; Justera neråt till 2 om det var 3
+STORE_X:
+  ; sts TPOSX, r16         ; Spara x-koordinaten för målet
+  std Z+3, r16
+   
+    lds r16, SEED          ; Ladda SEED igen
+    inc r16                ; Inkrementera SEED igen
+    sts SEED, r16          ; Spara det inkrementerade värdet tillbaka till SEED
+    andi r16, 0x07         ; Använd de tre lägsta bitarna
+    cpi r16, 5            ; Kontrollera om resultatet är 5 eller högre
+    brlo STORE_Y           ; Om det är mindre än 5, fortsätt
+    subi r16, 5            ; Justera ner till ett värde mellan 0 och 4
+STORE_Y:
+    ;sts TPOSY, r16         ; Spara y-koordinaten för målet
+	
+	std Z+4, r16
+    ret
+
+
 ERASE_VMEM:
 	push ZL
 	push ZH
@@ -269,9 +360,9 @@ DELAY_LOOP:
 	pop		r16
 	ret
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Specifik fördröjning på 500 millisekunder
+; Specifik fördröjning på 500 millisekunde (var det drog ned fördjröjning så det passade bättre)
 DELAY_500:
-	ldi  r18, 1
+	ldi  r18, 1.5
     ldi  r19, 138
     ldi  r20, 86
 L1: dec  r20
@@ -354,4 +445,4 @@ SETBIT_LOOP:
 	lsl 	r16		; shift
 	jmp 	SETBIT_LOOP
 SETBIT_END:
-	ret
+	ret		
